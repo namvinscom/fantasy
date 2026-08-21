@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
 from app.db.models import Gameweek, Player, Team
-from app.services.scoring_engine import compute_player_score, compute_recommendation
+from app.services.scoring_engine import compute_player_score, compute_recommendation, get_scoring_context
+from fastapi_cache.decorator import cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/players", tags=["players"])
@@ -67,6 +68,7 @@ def _player_to_dict(p: Player, include_score: bool = True, db: Session | None = 
 
 
 @router.get("")
+@cache(expire=3600)
 def list_players(
     db: Session = Depends(get_db),
     position: Optional[str] = Query(None, description="GK/DEF/MID/FWD"),
@@ -128,13 +130,10 @@ def get_player(player_id: int, db: Session = Depends(get_db)):
         "score_breakdown": {
             "total": bd.total,
             "fixture": bd.fixture,
-            "expected_points": bd.expected_points,
-            "minutes": bd.minutes,
             "xg_xa": bd.xg_xa,
             "role": bd.role,
             "team_strength": bd.team_strength,
             "form": bd.form,
-            "ownership": bd.ownership,
         },
         "reasons": bd.reasons,
         "risks": bd.risks,
@@ -146,10 +145,11 @@ def get_player(player_id: int, db: Session = Depends(get_db)):
 @router.post("/compute-scores")
 def compute_all_scores(db: Session = Depends(get_db)):
     """Recompute FPL scores for all players and persist to DB."""
+    ctx = get_scoring_context(db)
     players = db.query(Player).all()
     updated = 0
     for p in players:
-        bd = compute_player_score(p, db)
+        bd = compute_player_score(p, db=db, ctx=ctx)
         p.fpl_score = bd.total
         updated += 1
     db.commit()

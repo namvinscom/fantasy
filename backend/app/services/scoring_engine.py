@@ -2,14 +2,11 @@
 FPL Scoring Engine — computes a 0-100 score for each player.
 
 Framework (adjustable weights):
-  20% Fixture difficulty (FDR-based)
-  20% Expected points (form × minutes projection)
-  15% Minutes / starting probability
-  15% xG + xA (attacking involvement)
-  10% Player Role (captain/penalty/set-piece flags encoded in position & stats)
-  10% Team Strength
-   5% Form (recent 5-GW rolling average)
-   5% Ownership (% selected)
+  25% Fixture difficulty (FDR-based)
+  30% xG + xA / 90 (attacking involvement)
+  15% Form (recent 5-GW rolling average)
+  15% Player Role (captain/penalty/set-piece flags encoded in position & stats)
+  15% Team Strength
 
 If a metric is unavailable, it is excluded from the denominator
 and weights are re-normalized automatically.
@@ -23,17 +20,46 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Fixture, Gameweek, Player, Team
 
+@dataclass
+class ScoringContext:
+    current_gw: int
+    fixtures_by_team: dict[int, list[Fixture]]
+    teams_by_id: dict[int, Team]
+
+def get_scoring_context(db: Session, num_gw: int = 5) -> ScoringContext:
+    current_gw_obj = db.query(Gameweek).filter_by(is_current=True).first()
+    if not current_gw_obj:
+        current_gw_obj = db.query(Gameweek).filter_by(is_next=True).first()
+    current_gw = current_gw_obj.id if current_gw_obj else 1
+
+    fixtures = (
+        db.query(Fixture)
+        .filter(
+            Fixture.gameweek >= current_gw,
+            Fixture.gameweek < current_gw + num_gw,
+            Fixture.finished == False,
+        )
+        .all()
+    )
+    
+    fixtures_by_team = {}
+    for f in fixtures:
+        fixtures_by_team.setdefault(f.team_h, []).append(f)
+        fixtures_by_team.setdefault(f.team_a, []).append(f)
+        
+    teams = db.query(Team).all()
+    teams_by_id = {t.id: t for t in teams}
+    
+    return ScoringContext(current_gw=current_gw, fixtures_by_team=fixtures_by_team, teams_by_id=teams_by_id)
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "fixture": 0.20,
-    "expected_points": 0.20,
-    "minutes": 0.15,
-    "xg_xa": 0.15,
-    "role": 0.10,
-    "team_strength": 0.10,
-    "form": 0.05,
-    "ownership": 0.05,
+    "fixture": 0.25,
+    "xg_xa": 0.30,
+    "form": 0.15,
+    "role": 0.15,
+    "team_strength": 0.15,
 }
 
 
@@ -45,13 +71,10 @@ def _normalize_position(position: str | None) -> str:
 class ScoreBreakdown:
     total: float = 0.0
     fixture: Optional[float] = None
-    expected_points: Optional[float] = None
-    minutes: Optional[float] = None
     xg_xa: Optional[float] = None
+    form: Optional[float] = None
     role: Optional[float] = None
     team_strength: Optional[float] = None
-    form: Optional[float] = None
-    ownership: Optional[float] = None
     reasons: list[str] = field(default_factory=list)
     risks: list[str] = field(default_factory=list)
     confidence: int = 0
@@ -65,29 +88,35 @@ def _normalize_weights(weights: dict[str, float], available_keys: set[str]) -> d
     return {k: v / total for k, v in filtered.items()}
 
 
-def _fixture_score(player: Player, db: Session, num_gw: int = 5) -> Optional[float]:
+def _fixture_score(player: Player, db: Session = None, ctx: ScoringContext | None = None, num_gw: int = 5) -> Optional[float]:
     """Score 0-1 based on upcoming FDR for the next num_gw gameweeks."""
     if not player.team_id:
         return None
-    current_gw_obj = db.query(Gameweek).filter_by(is_current=True).first()
-    if not current_gw_obj:
-        current_gw_obj = db.query(Gameweek).filter_by(is_next=True).first()
-    if not current_gw_obj:
-        return None
-    current_gw = current_gw_obj.id
+        
+    if ctx:
+        fixtures = ctx.fixtures_by_team.get(player.team_id, [])
+    else:
+        if not db: return None
+        current_gw_obj = db.query(Gameweek).filter_by(is_current=True).first()
+        if not current_gw_obj:
+            current_gw_obj = db.query(Gameweek).filter_by(is_next=True).first()
+        if not current_gw_obj:
+            return None
+        current_gw = current_gw_obj.id
 
-    fixtures = (
-        db.query(Fixture)
-        .filter(
-            Fixture.gameweek >= current_gw,
-            Fixture.gameweek < current_gw + num_gw,
-            Fixture.finished == False,
+        fixtures = (
+            db.query(Fixture)
+            .filter(
+                Fixture.gameweek >= current_gw,
+                Fixture.gameweek < current_gw + num_gw,
+                Fixture.finished == False,
+            )
+            .filter(
+                (Fixture.team_h == player.team_id) | (Fixture.team_a == player.team_id)
+            )
+            .all()
         )
-        .filter(
-            (Fixture.team_h == player.team_id) | (Fixture.team_a == player.team_id)
-        )
-        .all()
-    )
+        
     if not fixtures:
         return None
 
@@ -105,39 +134,32 @@ def _fixture_score(player: Player, db: Session, num_gw: int = 5) -> Optional[flo
     return max(0.0, min(1.0, score))
 
 
-def _minutes_score(player: Player) -> Optional[float]:
-    """Starting probability proxy based on chance_of_playing and minutes."""
+def _availability_multiplier(player: Player) -> float:
+    """Multiplier for final score based on availability (0.0 to 1.0)."""
+    if player.status in ("i", "s", "u", "n"):
+        return 0.0
+    if player.status == "a":
+        return 1.0
+    if player.status == "d":
+        return 0.5
     cop = player.chance_of_playing_next_round
     if cop is not None:
         return cop / 100.0
-    # Fallback: if no injury info and has minutes, assume likely starter
-    if player.status == "a":
-        return 0.8  # available but unknown playing time
-    elif player.status == "d":
-        return 0.5  # doubtful
-    elif player.status in ("i", "s", "u", "n"):
-        return 0.1  # injured / suspended / unavailable
-    return None
-
-
-def _expected_points_score(player: Player) -> Optional[float]:
-    """Proxy for expected points: form combined with minutes availability."""
-    if player.form is None:
-        return None
-    # form is avg pts over last 5 GWs (max reasonable ~15)
-    pts_score = min(player.form / 15.0, 1.0)
-    mins_modifier = _minutes_score(player) or 0.8
-    return pts_score * mins_modifier
+    return 1.0
 
 
 def _xg_xa_score(player: Player) -> Optional[float]:
-    xg = player.expected_goals
-    xa = player.expected_assists
-    if xg is None and xa is None:
-        return None
-    total = (xg or 0) + (xa or 0)
-    # Max reasonable xGI per season ≈ 25 (based on top players)
-    return min(total / 25.0, 1.0)
+    """Score 0-1 based on xG + xA per 90 minutes."""
+    xg = player.expected_goals or 0.0
+    xa = player.expected_assists or 0.0
+    total = xg + xa
+    minutes = player.minutes or 0
+    if minutes < 90:
+        return 0.0
+    
+    xgi_90 = total / (minutes / 90.0)
+    # A top tier player has ~1.0 xGI/90. We cap it at 1.0.
+    return min(xgi_90 / 1.0, 1.0)
 
 
 def _role_score(player: Player) -> Optional[float]:
@@ -151,10 +173,16 @@ def _role_score(player: Player) -> Optional[float]:
     return base
 
 
-def _team_strength_score(player: Player, db: Session) -> Optional[float]:
+def _team_strength_score(player: Player, db: Session = None, ctx: ScoringContext | None = None) -> Optional[float]:
     if not player.team_id:
         return None
-    team = db.get(Team, player.team_id)
+    
+    if ctx:
+        team = ctx.teams_by_id.get(player.team_id)
+    else:
+        if not db: return None
+        team = db.get(Team, player.team_id)
+        
     if not team:
         return None
     overall = (team.strength_overall_home or 1200) + (team.strength_overall_away or 1200)
@@ -169,14 +197,6 @@ def _form_score(player: Player) -> Optional[float]:
     return min(player.form / 12.0, 1.0)
 
 
-def _ownership_score(player: Player) -> Optional[float]:
-    sel = player.selected_by_percent
-    if sel is None:
-        return None
-    # Higher ownership = safer pick, max at 60%
-    return min(sel / 60.0, 1.0)
-
-
 def _build_reasons(bd: ScoreBreakdown, player: Player) -> tuple[list[str], list[str]]:
     reasons, risks = [], []
 
@@ -186,31 +206,13 @@ def _build_reasons(bd: ScoreBreakdown, player: Player) -> tuple[list[str], list[
         elif bd.fixture <= 0.3:
             risks.append("Fixture ngắn hạn khó")
 
-    if bd.expected_points is not None:
-        if bd.expected_points >= 0.6:
-            reasons.append("Expected points cao")
-        elif bd.expected_points <= 0.2:
-            risks.append("Expected points thấp")
-
-    if bd.minutes is not None:
-        if bd.minutes >= 0.75:
-            reasons.append("Khả năng đá đủ phút cao")
-        elif bd.minutes <= 0.4:
-            risks.append("Rủi ro không đá đủ phút")
-
     if bd.xg_xa is not None:
         if bd.xg_xa >= 0.5:
-            reasons.append("Chỉ số tấn công (xG+xA) tốt")
+            reasons.append("Chỉ số tấn công (xG+xA / 90) rất cao")
 
     if bd.role is not None:
         if bd.role >= 0.7:
             reasons.append("Vai trò tấn công quan trọng trong đội")
-
-    if bd.ownership is not None:
-        if player.selected_by_percent and player.selected_by_percent >= 30:
-            reasons.append(f"Ownership cao ({player.selected_by_percent:.1f}%)")
-        elif player.selected_by_percent and player.selected_by_percent <= 5:
-            reasons.append(f"Differential (ownership thấp: {player.selected_by_percent:.1f}%)")
 
     if player.news:
         risks.append(f"Tin tức: {player.news[:80]}")
@@ -220,27 +222,28 @@ def _build_reasons(bd: ScoreBreakdown, player: Player) -> tuple[list[str], list[
 
 def compute_player_score(
     player: Player,
-    db: Session,
+    db: Session = None,
     weights: dict[str, float] | None = None,
+    ctx: ScoringContext | None = None,
 ) -> ScoreBreakdown:
     w = weights or DEFAULT_WEIGHTS
     bd = ScoreBreakdown()
 
     raw: dict[str, Optional[float]] = {
-        "fixture": _fixture_score(player, db),
-        "expected_points": _expected_points_score(player),
-        "minutes": _minutes_score(player),
+        "fixture": _fixture_score(player, db=db, ctx=ctx),
         "xg_xa": _xg_xa_score(player),
         "role": _role_score(player),
-        "team_strength": _team_strength_score(player, db),
+        "team_strength": _team_strength_score(player, db=db, ctx=ctx),
         "form": _form_score(player),
-        "ownership": _ownership_score(player),
     }
 
     available = {k for k, v in raw.items() if v is not None}
     norm_w = _normalize_weights(w, available)
 
-    total = sum(norm_w[k] * raw[k] for k in norm_w)
+    base_index = sum(norm_w[k] * raw[k] for k in norm_w)
+    multiplier = _availability_multiplier(player)
+    
+    total = base_index * multiplier
     bd.total = round(total * 100, 1)
 
     # Store individual component scores (0-100)
@@ -255,14 +258,14 @@ def compute_player_score(
 
 
 def compute_recommendation(score: float, player: Player) -> str:
-    """Simple BUY/HOLD/SELL/WATCH based on score + status."""
+    """Simple recommendations based on score + status."""
     if player.status in ("i", "s", "u", "n"):
-        return "SELL"
-    if score >= 72:
-        return "BUY"
-    elif score >= 55:
-        return "HOLD"
-    elif score >= 40:
-        return "WATCH"
+        return "Sell / Drop"
+    if score > 75:
+        return "Must-Have"
+    elif score >= 60:
+        return "Solid Hold"
+    elif score >= 45:
+        return "Monitor / Rotation"
     else:
-        return "SELL"
+        return "Sell / Drop"

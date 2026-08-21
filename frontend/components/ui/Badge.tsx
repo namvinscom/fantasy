@@ -1,128 +1,74 @@
-import { cn } from "@/lib/utils";
+// Badge UI Components — inapp-1.0.0 light mode style
 
-// Recommendation badge
-interface BadgeProps {
+export function Badge({
+  label,
+  variant,
+  size,
+}: {
   label: string;
-  variant?: "buy" | "hold" | "sell" | "watch" | "default";
-  size?: "sm" | "md";
-  className?: string;
-}
-
-const REC_VI: Record<string, string> = {
-  BUY: "MUA",
-  HOLD: "GIỮ",
-  SELL: "BÁN",
-  WATCH: "THEO DÕI",
-};
-
-export function Badge({ label, variant = "default", size = "sm", className }: BadgeProps) {
-  const styles: Record<string, string> = {
-    buy:   "badge-buy",
-    hold:  "badge-hold",
-    sell:  "badge-sell",
-    watch: "badge-watch",
-    default: "bg-white/5 text-slate-400 border border-white/8",
+  variant?: "buy" | "hold" | "sell" | "watch" | "primary" | "success" | "info" | "warning" | "danger" | "must-have" | "solid hold" | "monitor / rotation" | "sell / drop";
+  size?: string;
+}) {
+  const variantMap: Record<string, string> = {
+    buy: "badge-success",
+    "must-have": "badge-success",
+    hold: "badge-info",
+    "solid hold": "badge-info",
+    sell: "badge-danger",
+    "sell / drop": "badge-danger",
+    watch: "badge-warning",
+    "monitor / rotation": "badge-warning",
+    primary: "badge-primary",
+    success: "badge-success",
+    info: "badge-info",
+    warning: "badge-warning",
+    danger: "badge-danger",
   };
-  const sizes = { sm: "px-2 py-0.5 text-[10px]", md: "px-3 py-1 text-xs" };
-  // Display Vietnamese label
-  const display = REC_VI[label?.toUpperCase()] || label;
-  return (
-    <span className={cn(
-      "inline-flex items-center rounded-md font-bold uppercase tracking-wider",
-      styles[variant],
-      sizes[size],
-      className
-    )}>
-      {display}
-    </span>
-  );
+  const cls = variantMap[variant || "primary"] || "badge-primary";
+  return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-// Position badge
-const POS_VI: Record<string, string> = {
-  GK: "THỦ",
-  DEF: "HẬU",
-  MID: "TIỀN",
-  FWD: "TẤN",
-};
-
-export function PositionBadge({ position, showFull = false }: { position: string; showFull?: boolean }) {
-  const normalizedPosition = position === "GKP" ? "GK" : position;
-  const styles: Record<string, string> = {
-    GK:  "bg-yellow-500/15 text-yellow-400 border border-yellow-500/25",
-    DEF: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25",
-    MID: "bg-blue-500/15 text-blue-400 border border-blue-500/25",
-    FWD: "bg-red-500/15 text-red-400 border border-red-500/25",
-  };
-  return (
-    <span className={cn(
-      "inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black tracking-wider",
-      styles[normalizedPosition] || "bg-slate-700 text-slate-300"
-    )}>
-      {showFull ? normalizedPosition : (POS_VI[normalizedPosition] || normalizedPosition)}
-    </span>
-  );
-}
-
-// FPL Score badge
 export function ScoreBadge({ score }: { score: number | null | undefined }) {
-  if (score == null) return <span className="text-slate-700 text-xs">—</span>;
-  const color =
-    score >= 72 ? "text-emerald-400" :
-    score >= 55 ? "text-blue-400" :
-    score >= 40 ? "text-yellow-400" :
-    "text-red-400";
-  const bg =
-    score >= 72 ? "bg-emerald-500/10 border-emerald-500/20" :
-    score >= 55 ? "bg-blue-500/10 border-blue-500/20" :
-    score >= 40 ? "bg-yellow-500/10 border-yellow-500/20" :
-    "bg-red-500/10 border-red-500/20";
-  return (
-    <span className={cn("font-black text-sm px-2 py-0.5 rounded-lg border font-mono", color, bg)}>
-      {score.toFixed(0)}
-    </span>
-  );
+  if (score == null) return <span className="score-pill score-low">—</span>;
+  const cls = score >= 70 ? "score-high" : score >= 40 ? "score-medium" : "score-low";
+  return <span className={`score-pill ${cls}`}>{Math.round(score)}</span>;
 }
 
-// FDR badge
-export function FDRBadge({ fdr, size = "sm" }: { fdr: number | null | undefined; size?: "sm" | "md" }) {
-  if (fdr == null) return null;
-  const sizeStyle = size === "md" ? "w-7 h-7 text-sm" : "w-5 h-5 text-xs";
-  return (
-    <span className={cn("inline-flex items-center justify-center rounded-md font-bold", `fdr-${fdr}`, sizeStyle)}>
-      {fdr}
-    </span>
-  );
-}
-
-// Status dot
-export function StatusDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    a: "bg-emerald-500",
-    d: "bg-yellow-500",
-    i: "bg-red-500",
-    s: "bg-red-600",
-    u: "bg-slate-500",
-    n: "bg-slate-600",
+export function PositionBadge({ position, showFull }: { position: string; showFull?: boolean }) {
+  const p = position?.toUpperCase();
+  const variantMap: Record<string, string> = {
+    GK: "badge-gk",
+    GKP: "badge-gk",
+    DEF: "badge-def",
+    MID: "badge-mid",
+    FWD: "badge-fwd",
   };
-  return <span className={cn("inline-block w-2 h-2 rounded-full", colors[status] || "bg-slate-500")} />;
+  const cls = variantMap[p] || "badge-primary";
+  const label = showFull ? ({ GK: "Thủ môn", DEF: "Hậu vệ", MID: "Tiền vệ", FWD: "Tiền đạo" }[p] || p) : (p === "GKP" ? "GK" : p);
+  return (
+    <span className={`badge ${cls}`} style={{ minWidth: 34, justifyContent: "center" }}>
+      {label}
+    </span>
+  );
 }
 
-// Chip status badge
-export function ChipBadge({ used, inPhase }: { used: boolean; inPhase: boolean }) {
-  if (used) return (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/20">
-      Đã dùng
-    </span>
-  );
-  if (!inPhase) return (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-500/15 text-slate-500 border border-slate-500/20">
-      Sai GW
-    </span>
-  );
+export function StatusDot({ status }: { status: string }) {
+  const colorMap: Record<string, string> = {
+    a: "#00C951",
+    d: "#F0B100",
+    i: "#FB2C36",
+    s: "#FB2C36",
+    u: "#a3a3a3",
+    n: "#a3a3a3",
+  };
+  const color = colorMap[status] || "#a3a3a3";
   return (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-      Có thể dùng
-    </span>
+    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} title={status} />
+  );
+}
+
+export function ChipBadge({ used, label }: { used: boolean; label: string }) {
+  return (
+    <span className={used ? "chip-used" : "chip-available"}>{used ? "Đã dùng" : label}</span>
   );
 }

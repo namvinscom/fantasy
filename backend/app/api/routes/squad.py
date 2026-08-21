@@ -74,6 +74,8 @@ def _squad_to_dict(squad: UserSquad, db: Session) -> dict:
                 "web_name": p.web_name,
                 "position": _normalize_position(p.position),
                 "team_id": p.team_id,
+                "team_name": p.team_rel.name if p.team_rel else "",
+                "team_short": p.team_rel.short_name if p.team_rel else "",
                 "price": sp.selling_price or p.price,
                 "purchase_price": sp.purchase_price,
                 "is_starting": sp.is_starting,
@@ -85,6 +87,8 @@ def _squad_to_dict(squad: UserSquad, db: Session) -> dict:
                 "chance_of_playing": p.chance_of_playing_next_round,
                 "fpl_score": p.fpl_score,
                 "form": p.form,
+                "expected_goals": p.expected_goals,
+                "expected_assists": p.expected_assists,
             })
 
     return {
@@ -119,15 +123,54 @@ def get_squad(db: Session = Depends(get_db)):
     squad = db.query(UserSquad).order_by(UserSquad.created_at.desc()).first()
     if not squad:
         return {"message": "No squad saved yet. Please set up your squad.", "squad": None}
-    return _squad_to_dict(squad, db)
+    return {"squad": _squad_to_dict(squad, db)}
+
+
+@router.get("/info")
+def get_squad_info(db: Session = Depends(get_db)):
+    """Get real-time rank and points for squad."""
+    from app.services.fpl_client import fpl_client
+    
+    squad = db.query(UserSquad).order_by(UserSquad.created_at.desc()).first()
+    if not squad or not squad.fpl_team_id:
+        return {
+            "overall_rank": squad.overall_rank if squad else None,
+            "total_points": squad.total_points if squad else None,
+            "gameweek_points": squad.gameweek_points if squad else None,
+            "gameweek_rank": squad.gameweek_rank if squad else None,
+            "fpl_team_id": squad.fpl_team_id if squad else None
+        }
+    
+    info = fpl_client.get_entry_info(squad.fpl_team_id)
+    if info:
+        # Update DB with latest
+        squad.overall_rank = info.get("summary_overall_rank", squad.overall_rank)
+        squad.total_points = info.get("summary_overall_points", squad.total_points)
+        squad.gameweek_points = info.get("summary_event_points", squad.gameweek_points)
+        squad.gameweek_rank = info.get("summary_event_rank", squad.gameweek_rank)
+        db.commit()
+        return {
+            "overall_rank": squad.overall_rank,
+            "total_points": squad.total_points,
+            "gameweek_points": squad.gameweek_points,
+            "gameweek_rank": squad.gameweek_rank,
+            "fpl_team_id": squad.fpl_team_id
+        }
+    return {
+        "overall_rank": squad.overall_rank,
+        "total_points": squad.total_points,
+        "gameweek_points": squad.gameweek_points,
+        "gameweek_rank": squad.gameweek_rank,
+        "fpl_team_id": squad.fpl_team_id
+    }
 
 
 @router.post("")
 def save_squad(body: SaveSquadRequest, db: Session = Depends(get_db)):
     """Save or update squad for a given GW."""
     # Validate player count
-    if len(body.players) != 15:
-        raise HTTPException(status_code=400, detail=f"Squad must have exactly 15 players, got {len(body.players)}")
+    if len(body.players) > 15:
+        raise HTTPException(status_code=400, detail=f"Squad cannot exceed 15 players, got {len(body.players)}")
 
     # Validate all players exist
     for sp in body.players:
@@ -244,14 +287,16 @@ def get_transfer_recommendations(db: Session = Depends(get_db)):
         "bank": squad.bank,
         "suggestions": [
             {
-                "player_out": s.player_out_name,
+                "player_out_name": s.player_out_name,
                 "player_out_id": s.player_out_id,
                 "player_out_price": s.player_out_price,
                 "player_out_score": s.player_out_score,
-                "player_in": s.player_in_name,
+                "horizon_fdr_out": s.horizon_fdr_out,
+                "player_in_name": s.player_in_name,
                 "player_in_id": s.player_in_id,
                 "player_in_price": s.player_in_price,
                 "player_in_score": s.player_in_score,
+                "horizon_fdr_in": s.horizon_fdr_in,
                 "score_gain": s.score_gain,
                 "transfer_cost": s.transfer_cost,
                 "net_gain": s.net_gain,

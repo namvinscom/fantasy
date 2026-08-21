@@ -13,11 +13,12 @@ import {
   Activity,
   CheckCircle2,
   AlertCircle,
+  BarChart3,
+  GitCompare,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import fplApi from "@/lib/api";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { timeAgo } from "@/lib/utils";
 
 const NAV = [
@@ -26,7 +27,9 @@ const NAV = [
   { href: "/players", icon: Users, label: "Cầu thủ" },
   { href: "/fixtures", icon: Calendar, label: "Lịch thi đấu" },
   { href: "/transfers", icon: ArrowLeftRight, label: "Transfer" },
+  { href: "/compare", icon: GitCompare, label: "So sánh" },
   { href: "/chips", icon: Zap, label: "Chip" },
+  { href: "/gameweeks", icon: BarChart3, label: "Gameweeks" },
   { href: "/simulator", icon: Shuffle, label: "Mô phỏng" },
 ];
 
@@ -38,131 +41,143 @@ export function Sidebar() {
   const [lastManualSync, setLastManualSync] = useState<string | null>(null);
   const [lastManualSyncFailed, setLastManualSyncFailed] = useState(false);
 
-  const { data: syncStatus } = useQuery({
+  const { data: syncStatusResponse } = useQuery({
     queryKey: ["syncStatus"],
     queryFn: () => fplApi.getSyncStatus().then((r) => r.data),
-    staleTime: 60_000,
+    staleTime: 5000,
+    refetchInterval: (query) => query.state.data?.is_syncing ? 2000 : false,
   });
 
-  const latestSyncLog = syncStatus?.[0];
-  const lastSync = lastManualSync || latestSyncLog?.created_at;
-  const lastSyncFailed = lastManualSync ? lastManualSyncFailed : latestSyncLog?.status === "error";
+  const prevIsSyncing = useRef(syncStatusResponse?.is_syncing);
+
+  useEffect(() => {
+    if (prevIsSyncing.current === true && syncStatusResponse?.is_syncing === false) {
+      qc.invalidateQueries();
+      setSyncMsg("Đồng bộ hoàn tất. Dữ liệu đã được cập nhật.");
+      setIsSuccess(true);
+      setTimeout(() => setSyncMsg(null), 5000);
+    }
+    prevIsSyncing.current = syncStatusResponse?.is_syncing;
+  }, [syncStatusResponse?.is_syncing, qc]);
 
   const syncMut = useMutation({
     mutationFn: () => fplApi.sync().then((r) => r.data),
     onSuccess: (data) => {
-      const p = data.results?.players ?? 0;
-      const f = data.results?.fixtures ?? 0;
-      const ok = data.status === "ok";
+      const ok = data.status === "processing";
       setLastManualSync(data.timestamp || new Date().toISOString());
       setLastManualSyncFailed(!ok);
-      setSyncMsg(ok ? `${p} cầu thủ, ${f} trận đã đồng bộ` : (data.results?.error || "Không thể lấy dữ liệu mới từ FPL."));
+      setSyncMsg(ok ? "Đang đồng bộ ngầm..." : "Không thể khởi tạo đồng bộ.");
       setIsSuccess(ok);
       qc.invalidateQueries({ queryKey: ["syncStatus"] });
-      qc.invalidateQueries({ queryKey: ["players"] });
-      qc.invalidateQueries({ queryKey: ["squad"] });
-      setTimeout(() => { setSyncMsg(null); setIsSuccess(false); }, 6000);
     },
     onError: () => {
       setLastManualSync(new Date().toISOString());
       setLastManualSyncFailed(true);
-      setSyncMsg("Đồng bộ thất bại. Kiểm tra backend hoặc kết nối FPL.");
+      setSyncMsg("Đồng bộ thất bại. Kiểm tra backend.");
       setIsSuccess(false);
       setTimeout(() => setSyncMsg(null), 5000);
     },
   });
 
+  const isSyncing = syncStatusResponse?.is_syncing || syncMut.isPending;
+  const latestSyncLog = syncStatusResponse?.logs?.[0];
+  const lastSync = lastManualSync || latestSyncLog?.created_at;
+  const lastSyncFailed = lastManualSync ? lastManualSyncFailed : latestSyncLog?.status === "error";
+
   return (
-    <aside className="w-60 h-screen flex flex-col shrink-0 border-r border-white/[0.05]" style={{ background: "linear-gradient(180deg, #080f1c 0%, #060b14 100%)" }}>
+    <aside
+      className="sidebar"
+      style={{ width: "240px", position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 1030 }}
+    >
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/[0.05]">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #7c3aed, #2563eb)" }}>
-            <span className="text-white font-black text-xs">NV</span>
-          </div>
-          <div className="min-w-0">
-            <p className="font-black text-white text-sm leading-tight tracking-tight">Namvinscom</p>
-            <p className="text-[10px] font-semibold tracking-wider" style={{ color: "rgba(124,58,237,0.8)" }}>FANTASY · 2026/27</p>
-          </div>
+      <div className="sidebar-logo">
+        <div
+          style={{
+            width: 34, height: 34, borderRadius: 10,
+            background: "linear-gradient(135deg, #E66239, #c4502d)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ color: "#fff", fontWeight: 800, fontSize: 13, letterSpacing: -0.5 }}>NV</span>
+        </div>
+        <div>
+          <p style={{ fontWeight: 700, fontSize: 14, color: "#262626", lineHeight: 1.2 }}>Namvinscom</p>
+          <p style={{ fontWeight: 600, fontSize: 10, color: "#E66239", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            Fantasy · 2026/27
+          </p>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        <p className="section-title px-2 mb-3">Menu</p>
+      <nav className="sidebar-nav">
+        <p className="sidebar-nav-group-label">Menu chính</p>
         {NAV.map(({ href, icon: Icon, label }) => {
           const active = pathname === href || (href !== "/" && pathname.startsWith(href));
           return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                active
-                  ? "text-white"
-                  : "text-slate-500 hover:text-slate-200 hover:bg-white/[0.04]"
-              )}
-              style={active ? {
-                background: "linear-gradient(135deg, rgba(124,58,237,0.2), rgba(37,99,235,0.12))",
-                border: "1px solid rgba(124,58,237,0.25)",
-              } : {}}
-            >
-              <Icon className={cn("w-4 h-4 shrink-0", active ? "text-violet-400" : "")} />
-              {label}
-              {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500 pulse-dot" />}
+            <Link key={href} href={href} className={`nav-link ${active ? "active" : ""}`}>
+              <Icon className="nav-icon" />
+              <span>{label}</span>
+              {active && <span className="nav-badge" />}
             </Link>
           );
         })}
       </nav>
 
       {/* Sync section */}
-      <div className="px-3 pb-4 border-t border-white/[0.05] pt-3">
-        {/* Last sync info */}
-        {lastSync && (
-          <div className={cn(
-            "mb-2 flex items-center gap-2 rounded-lg border px-2.5 py-2",
-            lastSyncFailed
-              ? "border-red-400/20 bg-red-400/[0.08]"
-              : "border-emerald-400/15 bg-emerald-400/[0.08]"
-          )}>
-            {lastSyncFailed ? (
-              <AlertCircle className="w-3.5 h-3.5 text-red-300" />
-            ) : (
-              <Activity className="w-3.5 h-3.5 text-emerald-400 live-dot" />
-            )}
-            <span className={cn(
-              "text-[11px] font-medium",
-              lastSyncFailed ? "text-red-100/80" : "text-emerald-100/80"
-            )}>
-              {lastSyncFailed ? "Lần sync lỗi" : "Cập nhật"} {timeAgo(lastSync)}
-            </span>
+      <div style={{ padding: "12px", borderTop: "1px solid #e5e5e5" }}>
+        {/* Sync status message */}
+        {syncMsg && (
+          <div
+            style={{
+              display: "flex", alignItems: "flex-start", gap: 8,
+              padding: "9px 12px",
+              borderRadius: 8,
+              marginBottom: 8,
+              fontSize: 12, fontWeight: 500,
+              background: isSuccess ? "rgba(0,201,81,0.08)" : "rgba(251,44,54,0.08)",
+              color: isSuccess ? "#00a843" : "#d91a24",
+              border: `1px solid ${isSuccess ? "rgba(0,201,81,0.2)" : "rgba(251,44,54,0.2)"}`,
+            }}
+          >
+            {isSuccess
+              ? <CheckCircle2 style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
+              : <AlertCircle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
+            }
+            <span style={{ lineHeight: 1.4 }}>{syncMsg}</span>
           </div>
         )}
 
-        {/* Sync message */}
-        {syncMsg && (
-          <div className={cn(
-            "text-xs px-3 py-2 rounded-lg mb-2 leading-snug",
-            isSuccess ? "bg-emerald-900/30 text-emerald-400 border border-emerald-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"
-          )}>
-            <span className="flex items-start gap-2">
-              {isSuccess ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-              <span>{syncMsg}</span>
-            </span>
+        {/* Last sync info */}
+        {lastSync && !syncMsg && (
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 7,
+              padding: "7px 10px",
+              borderRadius: 8, marginBottom: 8,
+              fontSize: 11.5, fontWeight: 500,
+              background: lastSyncFailed ? "rgba(251,44,54,0.06)" : "rgba(0,201,81,0.06)",
+              color: lastSyncFailed ? "#d91a24" : "#00a843",
+              border: `1px solid ${lastSyncFailed ? "rgba(251,44,54,0.15)" : "rgba(0,201,81,0.15)"}`,
+            }}
+          >
+            <Activity style={{ width: 13, height: 13 }} />
+            <span>{lastSyncFailed ? "Lần sync lỗi" : "Cập nhật"} {timeAgo(lastSync)}</span>
           </div>
         )}
 
         <button
           id="btn-sync-fpl"
           onClick={() => syncMut.mutate()}
-          disabled={syncMut.isPending}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold btn-primary"
+          disabled={isSyncing}
+          className="btn btn-primary"
+          style={{ width: "100%", justifyContent: "center" }}
         >
-          <RefreshCw className={cn("w-3.5 h-3.5", syncMut.isPending && "animate-spin")} />
-          {syncMut.isPending ? "Đang đồng bộ…" : "Đồng bộ FPL"}
+          <RefreshCw style={{ width: 14, height: 14 }} className={isSyncing ? "animate-spin" : ""} />
+          {isSyncing ? "Đang đồng bộ…" : "Đồng bộ FPL"}
         </button>
-        <p className="text-[10px] text-slate-700 mt-1.5 text-center">
-          Dữ liệu từ fantasy.premierleague.com
+        <p style={{ fontSize: 11, color: "#a3a3a3", marginTop: 6, textAlign: "center" }}>
+          Từ fantasy.premierleague.com
         </p>
       </div>
     </aside>

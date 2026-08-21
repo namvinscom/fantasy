@@ -28,12 +28,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
+
 # Create DB tables on startup
 @app.on_event("startup")
 def startup():
     logger.info("Starting FPL Assistant API...")
     create_tables()
     logger.info("Database tables created/verified.")
+    FastAPICache.init(InMemoryBackend(), prefix="fpl-cache")
+    logger.info("FastAPI Cache initialized (InMemory).")
 
 # Register routers
 from app.api.routes import fixtures, gameweeks, picks, players, simulator, squad, sync

@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
-import { Inter, Space_Grotesk } from "next/font/google";
+import { Poppins } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Sidebar } from "@/components/layout/Sidebar";
 
-const inter = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-inter" });
-const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space" });
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-poppins",
+});
 
 export const metadata: Metadata = {
   title: "Namvinscom Fantasy — FPL 2026/27",
@@ -20,14 +23,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`dark ${inter.variable} ${spaceGrotesk.variable}`}>
-      <body className="bg-[#060b12] text-slate-100 antialiased">
+    <html lang="vi" className={poppins.variable} suppressHydrationWarning>
+      <body className="bg-[#f5f5f5] text-[#262626] antialiased">
         <Providers>
           <div className="flex h-screen overflow-hidden">
             <Sidebar />
-            <main className="flex-1 overflow-y-auto bg-[#060b12]">
-              <div className="min-h-full">{children}</div>
-            </main>
+            <div className="flex-1 flex flex-col overflow-hidden" style={{ marginLeft: "240px" }}>
+              <main className="flex-1 overflow-y-auto">
+                <div className="min-h-full">{children}</div>
+              </main>
+            </div>
           </div>
         </Providers>
       </body>

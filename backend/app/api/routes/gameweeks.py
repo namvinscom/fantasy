@@ -59,3 +59,11 @@ def sync_live_gw(gw_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"Could not fetch GW{gw_id} live data from FPL")
     count = sync_gw_live(db, gw_id, live)
     return {"gameweek": gw_id, "records_updated": count}
+
+
+@router.get("/chip-planner/data")
+def chip_planner_data(db: Session = Depends(get_db)):
+    """Return BGW/DGW data, squad horizon, and recommendations for chip planner."""
+    from app.services.chip_planner import analyze_chip_strategy
+    return analyze_chip_strategy(db)
+

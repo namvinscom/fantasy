@@ -88,10 +88,19 @@ export default function TransfersPage() {
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-1 p-3 rounded-xl border border-red-500/15 bg-red-500/5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-red-400 mb-1.5">Bán ra</p>
-                    <p className="font-bold text-white">{s.player_out}</p>
+                    <p className="font-bold text-white">{s.player_out_name}</p>
                     <p className="text-[11px] text-slate-600 mt-0.5">
                       {formatPrice(s.player_out_price)} · Điểm: {s.player_out_score.toFixed(0)}
                     </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Tầm nhìn 5V:</span>
+                      <span className={cn(
+                        "text-[10px] font-bold px-1.5 py-0.5 rounded",
+                        s.horizon_fdr_out >= 3.5 ? "bg-red-500/20 text-red-400" : s.horizon_fdr_out <= 2.6 ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-slate-300"
+                      )}>
+                        FDR {s.horizon_fdr_out?.toFixed(1) || "N/A"}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex flex-col items-center shrink-0">
                     <ArrowRight className="w-4 h-4 text-slate-600" />
@@ -101,10 +110,19 @@ export default function TransfersPage() {
                   </div>
                   <div className="flex-1 p-3 rounded-xl border border-emerald-500/15 bg-emerald-500/5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 mb-1.5">Mua vào</p>
-                    <p className="font-bold text-white">{s.player_in}</p>
+                    <p className="font-bold text-white">{s.player_in_name}</p>
                     <p className="text-[11px] text-slate-600 mt-0.5">
                       {formatPrice(s.player_in_price)} · Điểm: {s.player_in_score.toFixed(0)}
                     </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Tầm nhìn 5V:</span>
+                      <span className={cn(
+                        "text-[10px] font-bold px-1.5 py-0.5 rounded",
+                        s.horizon_fdr_in >= 3.5 ? "bg-red-500/20 text-red-400" : s.horizon_fdr_in <= 2.6 ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-slate-300"
+                      )}>
+                        FDR {s.horizon_fdr_in?.toFixed(1) || "N/A"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

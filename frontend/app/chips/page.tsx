@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import fplApi from "@/lib/api";
 import { LoadingCard } from "@/components/ui/Cards";
 import { ChipBadge } from "@/components/ui/Badge";
-import { Info, Zap } from "lucide-react";
+import { Info, Zap, Sparkles, TrendingUp, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const CHIP_INFO = [
@@ -74,6 +74,11 @@ export default function ChipsPage() {
     retry: false,
   });
 
+  const { data: plannerData } = useQuery({
+    queryKey: ["chipPlanner"],
+    queryFn: () => fplApi.getChipPlannerData().then((r) => r.data),
+  });
+
   const chips = data?.squad?.chips as Record<string, boolean> | undefined;
   const currentGW = gwData?.id ?? 1;
 
@@ -114,23 +119,52 @@ export default function ChipsPage() {
               <div
                 key={chip.key}
                 className={cn(
-                  "glass-card p-5 transition-all",
+                  "glass-card p-5 transition-all relative overflow-hidden",
                   used
-                    ? "opacity-50 border-red-500/15"
+                    ? "border-red-500/20 bg-red-900/10 opacity-75 grayscale-[30%]"
                     : inPhase
-                    ? "border-violet-500/20"
-                    : "opacity-40"
+                    ? "border-emerald-500/40 bg-gradient-to-br from-emerald-900/20 to-transparent shadow-[0_0_20px_rgba(16,185,129,0.08)] hover:border-emerald-400/60 hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] hover:-translate-y-1"
+                    : "border-slate-700/50 bg-slate-900/50 opacity-60"
                 )}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-2xl">{chip.icon}</span>
-                  <ChipBadge used={used} inPhase={inPhase} />
+                {/* Status Indicator */}
+                {used && (
+                  <div className="absolute top-4 right-4 transform rotate-12 border-2 border-red-500/50 text-red-500/70 text-[10px] font-black tracking-widest px-2 py-0.5 rounded">
+                    ĐÃ DÙNG
+                  </div>
+                )}
+                {!used && !inPhase && (
+                  <div className="absolute top-4 right-4 flex items-center gap-1 text-slate-500 bg-slate-800/80 px-2 py-1 rounded-md border border-slate-700/50">
+                    <Lock className="w-3 h-3" />
+                    <span className="text-[9px] font-bold uppercase tracking-wider">Sai Giai Đoạn</span>
+                  </div>
+                )}
+                {!used && inPhase && (
+                  <div className="absolute top-4 right-4 flex items-center gap-1.5 text-emerald-400 bg-emerald-900/30 px-2.5 py-1 rounded-md border border-emerald-500/30">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">Sẵn sàng</span>
+                  </div>
+                )}
+
+                <div className="mb-4 mt-2">
+                  <span className="text-3xl drop-shadow-md">{chip.icon}</span>
                 </div>
-                <h3 className="text-base font-black text-white mb-0.5">{chip.label}</h3>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-violet-400 mb-2">{chip.phase}</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">{chip.desc}</p>
-                <div className="border-t border-white/[0.05] pt-2.5">
-                  <p className="text-[10px] text-yellow-500/70 leading-snug">
+                
+                <h3 className={cn("text-lg font-black mb-0.5", used ? "text-slate-400" : inPhase ? "text-emerald-50" : "text-slate-300")}>
+                  {chip.label}
+                </h3>
+                <p className={cn("text-[10px] font-bold uppercase tracking-wider mb-2", used ? "text-red-400/60" : inPhase ? "text-emerald-400" : "text-slate-500")}>
+                  {chip.phase}
+                </p>
+                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                  {chip.desc}
+                </p>
+                
+                <div className={cn("border-t pt-3", used ? "border-red-500/10" : inPhase ? "border-emerald-500/20" : "border-white/[0.05]")}>
+                  <p className={cn("text-[11px] leading-snug font-medium", used ? "text-slate-500" : inPhase ? "text-yellow-400" : "text-slate-500")}>
                     💡 {chip.tip}
                   </p>
                 </div>
@@ -139,6 +173,100 @@ export default function ChipsPage() {
           })}
         </div>
       )}
+
+      {/* AI Recommendations */}
+      <div className="mb-6">
+        <h3 className="font-bold text-white mb-3 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-violet-400" />
+          AI Khuyến nghị chiến lược
+        </h3>
+        <div className="glass-card p-5 border border-violet-500/20 bg-violet-900/10">
+          {plannerData?.recommendations?.length ? (
+            <ul className="space-y-2">
+              {plannerData.recommendations.map((rec: string, i: number) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-violet-100">
+                  <span className="text-violet-400 mt-0.5 font-black">→</span>
+                  <span className="leading-relaxed">{rec}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-400 text-center py-4">Chưa có khuyến nghị nào.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Special Gameweeks Timeline */}
+      <div className="mb-6">
+        <h3 className="font-bold text-white mb-3 flex items-center gap-2">
+          <Zap className="w-4 h-4 text-emerald-400" />
+          Lịch thi đấu đặc biệt (BGW / DGW)
+        </h3>
+        <div className="glass-card p-5">
+          {plannerData?.special_gameweeks?.length ? (
+            <div className="space-y-4">
+              {plannerData.special_gameweeks.map((gw) => (
+                <div key={gw.gameweek} className="border-b border-white/[0.05] pb-4 last:border-0 last:pb-0">
+                  <p className="font-black text-white text-sm mb-2">Gameweek {gw.gameweek}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {gw.blanks.length > 0 && (
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                        <p className="text-[10px] uppercase font-bold text-red-400 tracking-wider mb-1">Blank (Không đá)</p>
+                        <p className="text-xs text-red-200">{gw.blanks.join(", ")}</p>
+                      </div>
+                    )}
+                    {gw.doubles.length > 0 && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                        <p className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider mb-1">Double (Đá 2 trận)</p>
+                        <p className="text-xs text-emerald-200">{gw.doubles.join(", ")}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400 text-center py-4">Chưa phát hiện Gameweek nào có lịch thi đấu đặc biệt.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Squad Horizon Analysis */}
+      <div className="mb-6">
+        <h3 className="font-bold text-white mb-3 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          Squad Horizon (Độ khó lịch thi đấu 5 vòng tới)
+        </h3>
+        <div className="glass-card p-5">
+          {plannerData?.squad_horizon?.length ? (
+            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2">
+              {plannerData.squad_horizon.map((h: any) => {
+                const diff = h.average_fdr;
+                const isHard = diff >= 3.5 || h.has_blank;
+                const isEasy = diff <= 2.6 && !h.has_blank;
+                return (
+                  <div key={h.gameweek} className={cn(
+                    "flex-1 min-w-[80px] p-3 rounded-xl border flex flex-col items-center justify-center text-center",
+                    isHard ? "bg-red-500/10 border-red-500/20" : isEasy ? "bg-emerald-500/10 border-emerald-500/20" : "bg-slate-800/50 border-white/5"
+                  )}>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">GW{h.gameweek}</p>
+                    <p className={cn(
+                      "text-xl font-black mb-1",
+                      isHard ? "text-red-400" : isEasy ? "text-emerald-400" : "text-white"
+                    )}>
+                      {h.average_fdr.toFixed(1)}
+                    </p>
+                    {h.has_blank && <p className="text-[9px] font-bold text-red-300 bg-red-900/40 px-1.5 py-0.5 rounded">BLANK</p>}
+                    {h.has_double && <p className="text-[9px] font-bold text-emerald-300 bg-emerald-900/40 px-1.5 py-0.5 rounded">DOUBLE</p>}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400 text-center py-4">Không có dữ liệu đội hình để phân tích.</p>
+          )}
+        </div>
+      </div>
 
       {/* Strategy guide */}
       <div className="glass-card p-5">

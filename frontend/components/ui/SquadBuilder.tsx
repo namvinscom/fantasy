@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, memo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import fplApi, { PickSuggestion, Player } from "@/lib/api";
 import {
@@ -16,6 +16,7 @@ import {
   Trash2,
   UserPlus,
   X,
+  RotateCcw,
 } from "lucide-react";
 import { cn, formatPrice } from "@/lib/utils";
 import { PositionBadge } from "./Badge";
@@ -90,6 +91,8 @@ function suggestionToPlayer(suggestion: PickSuggestion): Player {
     name: suggestion.name,
     web_name: suggestion.web_name,
     team_id: suggestion.team_id,
+    team_name: suggestion.team_name,
+    team_short: suggestion.team_short,
     position: suggestion.position,
     price: suggestion.price,
     price_display: suggestion.price_display,
@@ -112,7 +115,7 @@ function suggestionToPlayer(suggestion: PickSuggestion): Player {
   };
 }
 
-function PlayerSlot({
+const PlayerSlot = memo(function PlayerSlot({
   slot,
   captainId,
   viceCaptainId,
@@ -120,6 +123,7 @@ function PlayerSlot({
   onFocusPosition,
   onCaptain,
   onViceCaptain,
+  onDropPlayer,
 }: {
   slot: Slot;
   captainId: number | null;
@@ -128,7 +132,9 @@ function PlayerSlot({
   onFocusPosition: (position: Position) => void;
   onCaptain: (playerId: number) => void;
   onViceCaptain: (playerId: number) => void;
+  onDropPlayer: (data: string, targetSlotId: string) => void;
 }) {
+  const [isOver, setIsOver] = useState(false);
   const player = slot.player;
   const isStarter = slot.area === "starter";
 
@@ -136,9 +142,29 @@ function PlayerSlot({
     <div className="group flex min-w-[60px] flex-col items-center gap-1">
       <button
         type="button"
+        draggable={!!player}
+        onDragStart={(e) => {
+          if (player) {
+            e.dataTransfer.setData("text/plain", JSON.stringify({ type: "squad", slotId: slot.id }));
+          } else {
+            e.preventDefault();
+          }
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsOver(true);
+        }}
+        onDragLeave={() => setIsOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsOver(false);
+          const data = e.dataTransfer.getData("text/plain");
+          if (data) onDropPlayer(data, slot.id);
+        }}
         onClick={() => (player ? onClear(slot.id) : onFocusPosition(slot.position))}
         className={cn(
           "relative flex h-[64px] w-[58px] items-center justify-center overflow-hidden rounded-md border transition-all md:h-[72px] md:w-[64px]",
+          isOver && "ring-2 ring-emerald-400 ring-offset-2 ring-offset-black scale-105 z-10",
           player
             ? "border-emerald-300/50 bg-slate-950/55 shadow-lg shadow-black/20 hover:border-red-300/80"
             : "border-dashed border-white/25 bg-white/[0.055] hover:border-cyan-300/70 hover:bg-cyan-400/10"
@@ -176,18 +202,18 @@ function PlayerSlot({
           {player ? formatPrice(player.price) : slot.position}
         </div>
         {player && isStarter && (
-          <div className="mt-1 flex justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-1 flex justify-center gap-1 opacity-100 transition-opacity">
             <button
               type="button"
               onClick={() => onCaptain(player.id)}
-              className="rounded border border-yellow-400/30 bg-yellow-400/10 px-1.5 py-0.5 text-[9px] font-black text-yellow-300"
+              className={cn("rounded border px-1.5 py-0.5 text-[9px] font-black", captainId === player.id ? "border-yellow-400 bg-yellow-400 text-black" : "border-yellow-400/30 bg-yellow-400/10 text-yellow-300")}
             >
               C
             </button>
             <button
               type="button"
               onClick={() => onViceCaptain(player.id)}
-              className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[9px] font-black text-slate-200"
+              className={cn("rounded border px-1.5 py-0.5 text-[9px] font-black", viceCaptainId === player.id ? "border-slate-200 bg-slate-200 text-black" : "border-white/20 bg-white/10 text-slate-200")}
             >
               V
             </button>
@@ -196,18 +222,54 @@ function PlayerSlot({
       </div>
     </div>
   );
-}
+});
 
-export function SquadBuilder({ onClose }: { onClose: () => void }) {
+export function SquadBuilder({ initialSquad, onClose }: { initialSquad?: any; onClose: () => void }) {
   const [tab, setTab] = useState<"import" | "manual">("manual");
   const [teamId, setTeamId] = useState("");
-  const [formation, setFormation] = useState<Formation>("3-4-3");
-  const [slots, setSlots] = useState<Slot[]>(() => buildSlots("3-4-3"));
+  const [formation, setFormation] = useState<Formation>(
+    (initialSquad?.formation as Formation) || "3-4-3"
+  );
+  
+  const [slots, setSlots] = useState<Slot[]>(() => {
+    const defaultFormation = (initialSquad?.formation as Formation) || "3-4-3";
+    if (!initialSquad?.players) return buildSlots(defaultFormation);
+
+    const squadStarters = initialSquad.players.filter((p: any) => p.is_starting);
+    const squadBench = initialSquad.players.filter((p: any) => !p.is_starting).sort((a: any, b: any) => (a.bench_order ?? 99) - (b.bench_order ?? 99));
+    const sortedPlayers = [...squadStarters, ...squadBench];
+    
+    const mappedPlayers: Player[] = sortedPlayers.map((sp: any) => ({
+      id: sp.player_id,
+      name: sp.name,
+      web_name: sp.web_name,
+      team_id: sp.team_id,
+      team_name: sp.team_name || "",
+      team_short: sp.team_short || "",
+      position: sp.position as Position,
+      price: sp.price,
+      price_display: formatPrice(sp.price),
+      total_points: sp.total_points ?? 0,
+      event_points: sp.gameweek_points ?? 0,
+      form: sp.form ?? 0,
+      selected_by_percent: sp.ownership ?? 0,
+      minutes: 0, goals_scored: 0, assists: 0, clean_sheets: 0, bonus: 0,
+      expected_goals: sp.expected_goals, expected_assists: sp.expected_assists, expected_goal_involvements: null,
+      news: sp.news, chance_of_playing_next_round: sp.chance_of_playing, status: sp.status, fpl_score: sp.fpl_score,
+    }));
+
+    return arrangePlayersInSlots(mappedPlayers, defaultFormation);
+  });
+
   const [search, setSearch] = useState("");
   const [filterPos, setFilterPos] = useState<Position | null>(null);
   const [assistantView, setAssistantView] = useState<AssistantView>("suggestions");
-  const [captainId, setCaptainId] = useState<number | null>(null);
-  const [viceCaptainId, setViceCaptainId] = useState<number | null>(null);
+  const [captainId, setCaptainId] = useState<number | null>(() => {
+    return initialSquad?.players?.find((p: any) => p.is_captain)?.player_id || null;
+  });
+  const [viceCaptainId, setViceCaptainId] = useState<number | null>(() => {
+    return initialSquad?.players?.find((p: any) => p.is_vice_captain)?.player_id || null;
+  });
   const qc = useQueryClient();
 
   const selected = useMemo(() => getSelectedPlayers(slots), [slots]);
@@ -225,8 +287,8 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
   }
 
   const { data: searchResults } = useQuery({
-    queryKey: ["players", search, filterPos],
-    queryFn: () => fplApi.getPlayers({ search, position: filterPos || undefined, limit: 1000 }).then((r) => r.data),
+    queryKey: ["players", search, filterPos, "total_points"],
+    queryFn: () => fplApi.getPlayers({ search, position: filterPos || undefined, limit: 1000, sort_by: "total_points" }).then((r) => r.data),
     enabled: tab === "manual",
   });
 
@@ -336,6 +398,12 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
     setViceCaptainId(playerId);
   };
 
+  const handleResetSquad = () => {
+    setSlots(buildSlots(formation));
+    setCaptainId(null);
+    setViceCaptainId(null);
+  };
+
   const swapWithBench = (player: Player) => {
     const currentSlot = slots.find((slot) => slot.player?.id === player.id);
     if (!currentSlot) return;
@@ -351,6 +419,69 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
         return slot;
       })
     );
+  };
+
+  const handleDropPlayer = (dataStr: string, targetSlotId: string) => {
+    try {
+      const data = JSON.parse(dataStr);
+      const targetSlot = slots.find((s) => s.id === targetSlotId);
+      if (!targetSlot) return;
+
+      if (data.type === "assistant") {
+        const droppedPlayerId = data.id;
+        const playerFromSearch = searchResults?.players?.find((p) => p.id === droppedPlayerId);
+        const playerFromPicks = pickData?.suggestions?.find((p) => p.player_id === droppedPlayerId);
+        const player = playerFromSearch || (playerFromPicks ? suggestionToPlayer(playerFromPicks) : null);
+
+        if (!player) return;
+
+        if (player.position !== targetSlot.position) {
+          return alert(`Không thể xếp ${POS_LABELS[player.position]} vào vị trí ${POS_LABELS[targetSlot.position]}`);
+        }
+
+        const existingPlayer = targetSlot.player;
+
+        if (selectedIds.has(player.id) && (!existingPlayer || existingPlayer.id !== player.id)) {
+          return alert("Cầu thủ này đã có trong đội hình.");
+        }
+
+        const remainingAfterRemove = existingPlayer ? remaining + existingPlayer.price : remaining;
+        if (remainingAfterRemove - player.price < 0) return alert("Không đủ ngân sách.");
+
+        const currentTeamCounts = { ...teamCounts };
+        if (existingPlayer) currentTeamCounts[existingPlayer.team_id] -= 1;
+        if ((currentTeamCounts[player.team_id] || 0) >= 3) return alert("Chỉ được tối đa 3 cầu thủ cùng một CLB.");
+
+        setSlots((current) =>
+          current.map((slot) => {
+            if (slot.id === targetSlotId) return { ...slot, player };
+            return slot;
+          })
+        );
+
+        if (existingPlayer) {
+          if (captainId === existingPlayer.id) setCaptainId(null);
+          if (viceCaptainId === existingPlayer.id) setViceCaptainId(null);
+        }
+      } else if (data.type === "squad") {
+        const sourceSlotId = data.slotId;
+        const sourceSlot = slots.find((s) => s.id === sourceSlotId);
+        if (!sourceSlot || !sourceSlot.player || sourceSlotId === targetSlotId) return;
+
+        if (sourceSlot.position !== targetSlot.position) {
+           // Swap across positions (only possible for outfield bench) -> For now, reject to avoid complex formation changes.
+           return alert("Chỉ hỗ trợ kéo thả đổi cầu thủ cùng vị trí.");
+        }
+
+        setSlots((current) =>
+          current.map((slot) => {
+            if (slot.id === sourceSlot.id) return { ...slot, player: targetSlot.player };
+            if (slot.id === targetSlot.id) return { ...slot, player: sourceSlot.player };
+            return slot;
+          })
+        );
+      }
+    } catch (e) {}
   };
 
   const canSave = selected.length === 15 && remaining >= 0 && rows.bench.every((slot) => slot.player);
@@ -428,7 +559,7 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                     <Filter className="h-4 w-4 text-cyan-300" />
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Formation</span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {FORMATIONS.map((item) => (
                       <button
                         key={item}
@@ -441,6 +572,15 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                         {item}
                       </button>
                     ))}
+                    <div className="mx-1 h-5 w-px bg-white/10"></div>
+                    <button
+                      type="button"
+                      onClick={handleResetSquad}
+                      className="flex items-center gap-1.5 rounded-md bg-red-500/10 px-3 py-1.5 text-xs font-black text-red-400 transition-colors hover:bg-red-500/20"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reset
+                    </button>
                   </div>
                 </div>
 
@@ -466,6 +606,7 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                             onFocusPosition={focusPosition}
                             onCaptain={assignCaptain}
                             onViceCaptain={assignViceCaptain}
+                            onDropPlayer={handleDropPlayer}
                           />
                         ))}
                       </div>
@@ -489,6 +630,7 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                         onFocusPosition={focusPosition}
                         onCaptain={assignCaptain}
                         onViceCaptain={assignViceCaptain}
+                        onDropPlayer={handleDropPlayer}
                       />
                     ))}
                   </div>
@@ -610,7 +752,12 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                         {!isFetchingPicks && pickData?.suggestions?.map((suggestion) => {
                           const player = suggestionToPlayer(suggestion);
                           return (
-                            <div key={suggestion.player_id} className="rounded-lg border border-emerald-400/15 bg-emerald-400/[0.055] p-3 transition-colors hover:border-emerald-300/35">
+                            <div 
+                              key={suggestion.player_id} 
+                              className="rounded-lg border border-emerald-400/15 bg-emerald-400/[0.055] p-3 transition-colors hover:border-emerald-300/35 cursor-grab active:cursor-grabbing"
+                              draggable
+                              onDragStart={(e) => e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'assistant', id: suggestion.player_id }))}
+                            >
                               <div className="flex items-start gap-3">
                                 <button
                                   type="button"
@@ -666,7 +813,12 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                       );
 
                       return (
-                        <div key={player.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-black/25 p-2.5 transition-colors hover:border-white/20">
+                        <div 
+                          key={player.id} 
+                          className="flex items-center gap-2 rounded-lg border border-white/8 bg-black/25 p-2.5 transition-colors hover:border-white/20 cursor-grab active:cursor-grabbing"
+                          draggable
+                          onDragStart={(e) => e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'assistant', id: player.id }))}
+                        >
                           <button
                             type="button"
                             onClick={() => addPlayer(player)}
@@ -685,6 +837,10 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                               <span className="text-xs font-semibold text-slate-300">{formatPrice(player.price)}</span>
                               <span className="truncate text-[10px] text-slate-500">{(player as Player & { team_name?: string }).team_name}</span>
                             </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="block text-xs font-black text-emerald-300">{player.total_points}</span>
+                            <span className="text-[9px] uppercase tracking-wider text-slate-500">điểm</span>
                           </div>
                           {isSelected && (
                             <button
@@ -712,24 +868,33 @@ export function SquadBuilder({ onClose }: { onClose: () => void }) {
                   )}
 
                   <div className="mt-4 border-t border-white/10 pt-4">
-                    <button
-                      onClick={() => saveManualMut.mutate()}
-                      disabled={!canSave || saveManualMut.isPending}
-                      className="btn-primary flex w-full items-center justify-center gap-2 py-3 text-sm font-bold"
-                    >
-                      {saveManualMut.isPending ? (
-                        "Đang lưu..."
-                      ) : (
-                        <>
-                          <Check className="h-4 w-4" />
-                          Lưu đội hình
-                        </>
-                      )}
-                    </button>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handleResetSquad}
+                        className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-300 transition-colors hover:bg-red-500/20"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        onClick={() => saveManualMut.mutate()}
+                        disabled={saveManualMut.isPending}
+                        className="btn-primary flex flex-1 items-center justify-center gap-2 py-3 text-sm font-bold"
+                      >
+                        {saveManualMut.isPending ? (
+                          "Đang lưu..."
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4" />
+                            {canSave ? "Lưu đội hình" : "Lưu nháp"}
+                          </>
+                        )}
+                      </button>
+                    </div>
                     {!canSave && (
                       <div className="mt-2 flex items-start gap-2 text-[11px] leading-relaxed text-slate-500">
                         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        Cần đủ 15 cầu thủ, đúng cơ cấu vị trí, đủ 4 dự bị và không vượt ngân sách.
+                        Đội hình chưa đủ 15 người hoặc sai cấu trúc sẽ được "Lưu nháp". Bạn có thể quay lại sửa sau.
                       </div>
                     )}
                   </div>

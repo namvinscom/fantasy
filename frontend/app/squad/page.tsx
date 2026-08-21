@@ -1,13 +1,83 @@
 "use client";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import fplApi from "@/lib/api";
-import { PositionBadge } from "@/components/ui/Badge";
+import { PositionBadge, ScoreBadge, StatusDot } from "@/components/ui/Badge";
 import { LoadingCard } from "@/components/ui/Cards";
 import { formatPrice } from "@/lib/utils";
-import { Banknote, Plus, Shield, Shirt, Star, Trophy, WalletCards } from "lucide-react";
+import { Banknote, Plus, Shield, Shirt, Star, Trophy, WalletCards, RefreshCw, LayoutGrid, BarChart2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SquadBuilder } from "@/components/ui/SquadBuilder";
+
+// ─── Analytics Table ─────────────────────────────────────────────────────────
+function SquadAnalyticsTable({ players }: { players: any[] }) {
+  const sortedPlayers = [...players].sort((a, b) => {
+    // Sort starters first, then by position
+    if (a.is_starting !== b.is_starting) return b.is_starting ? 1 : -1;
+    const ord: Record<string, number> = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    return (ord[a.position] ?? 4) - (ord[b.position] ?? 4);
+  });
+
+  return (
+    <div className="glass-card overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/[0.05]">
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Vai trò</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left min-w-[140px]">Cầu thủ</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Vị trí</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-right">Form</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-right">xG</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-right">xA</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-right">FPL Score</th>
+              <th className="px-3 py-3 text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Tình trạng</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/[0.03]">
+            {sortedPlayers.map((p) => (
+              <tr key={p.player_id} className={cn("hover:bg-white/[0.02] transition-colors", !p.is_starting && "opacity-60")}>
+                <td className="px-3 py-3 text-xs font-semibold">
+                  {p.is_starting ? (
+                    <span className="text-emerald-400">Đá chính</span>
+                  ) : (
+                    <span className="text-slate-500">Dự bị {p.bench_order}</span>
+                  )}
+                  {p.is_captain && <span className="ml-1 text-yellow-400">(C)</span>}
+                  {p.is_vice_captain && <span className="ml-1 text-slate-400">(V)</span>}
+                </td>
+                <td className="px-3 py-3">
+                  <p className="font-semibold text-white text-sm leading-tight flex items-baseline gap-1.5">
+                    {p.web_name}
+                    <span className="text-[9px] text-slate-500 font-normal bg-white/5 px-1 rounded">ID: {p.player_id}</span>
+                  </p>
+                  <p className="text-[10px] text-slate-600 truncate max-w-[140px]">{p.name} · <span className="text-slate-400 font-medium">{p.team_name || p.team_short}</span></p>
+                </td>
+                <td className="px-3 py-3">
+                  <PositionBadge position={p.position} showFull />
+                </td>
+                <td className="px-3 py-3 text-right text-slate-300 text-xs">{p.form?.toFixed(1) ?? "—"}</td>
+                <td className="px-3 py-3 text-right text-slate-300 text-xs">{p.expected_goals != null ? p.expected_goals.toFixed(2) : "—"}</td>
+                <td className="px-3 py-3 text-right text-slate-300 text-xs">{p.expected_assists != null ? p.expected_assists.toFixed(2) : "—"}</td>
+                <td className="px-3 py-3 text-right">
+                  <ScoreBadge score={p.fpl_score} />
+                </td>
+                <td className="px-3 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <StatusDot status={p.status} />
+                    <span className="text-[11px] text-slate-500">
+                      {p.status === 'a' ? 'Sẵn sàng' : p.status === 'd' ? 'Nghi ngờ' : p.status === 'i' ? 'Chấn thương' : p.status === 's' ? 'Treo giò' : 'Không rõ'}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 // ─── Pitch player card ─────────────────────────────────────────────────────────
 function PitchPlayer({ player }: { player: any }) {
@@ -197,15 +267,30 @@ function SquadInfoPanel({ squad }: { squad: any }) {
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function SquadPage() {
   const [showInfo, setShowInfo] = useState(false);
+  const [viewMode, setViewMode] = useState<"pitch" | "analytics">("pitch");
+  const queryClient = useQueryClient();
+
+  const syncMut = useMutation({
+    mutationFn: () => fplApi.sync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["squad"] });
+    },
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["squad"],
     queryFn: () => fplApi.getSquad().then((r) => r.data),
   });
 
-  if (isLoading) return <div className="p-6"><LoadingCard className="h-96" /></div>;
-
   const squad = data?.squad;
+
+  const { data: squadInfo } = useQuery({
+    queryKey: ["squadInfo"],
+    queryFn: () => fplApi.getSquadInfo().then((r) => r.data),
+    enabled: !!squad?.fpl_team_id,
+  });
+
+  if (isLoading) return <div className="p-6"><LoadingCard className="h-96" /></div>;
 
   return (
     <div className="p-6 fade-in">
@@ -221,15 +306,48 @@ export default function SquadPage() {
             {squad ? `GW${squad.gameweek} · Formation: ${squad.formation || "—"}` : "Chưa thiết lập squad"}
           </p>
         </div>
-        <button
-          id="btn-setup-squad"
-          onClick={() => setShowInfo(true)}
-          className="flex items-center gap-2 px-4 py-2 btn-primary text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Thiết lập squad
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => syncMut.mutate()}
+            disabled={syncMut.isPending}
+            className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-sm font-bold text-slate-300 hover:text-white transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={cn("w-4 h-4", syncMut.isPending && "animate-spin")} />
+            {syncMut.isPending ? "Đang đồng bộ..." : "Đồng bộ FPL"}
+          </button>
+          <button
+            id="btn-setup-squad"
+            onClick={() => setShowInfo(true)}
+            className="flex items-center gap-2 px-4 py-2 btn-primary text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Thiết lập squad
+          </button>
+        </div>
       </div>
+
+      {squad && (
+        <div className="flex bg-white/[0.03] p-1 rounded-xl border border-white/[0.06] w-fit mb-4">
+          <button
+            onClick={() => setViewMode("pitch")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              viewMode === "pitch" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            Sân Bóng
+          </button>
+          <button
+            onClick={() => setViewMode("analytics")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              viewMode === "analytics" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <BarChart2 className="w-4 h-4" />
+            Phân Tích Đội Hình
+          </button>
+        </div>
+      )}
 
       {!squad ? (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/70">
@@ -266,37 +384,42 @@ export default function SquadPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Pitch + stats */}
-          <div className="lg:col-span-2 space-y-4">
-            {/* Quick stats */}
-            <div className="grid grid-cols-4 gap-3">
-              {[
-                { label: "Giá trị đội", value: formatPrice(squad.team_value), icon: WalletCards },
-                { label: "Ngân hàng", value: formatPrice(squad.bank), icon: Banknote },
-                { label: "Free Transfer", value: `${squad.free_transfers}FT`, icon: Plus },
-                { label: "Tổng điểm", value: squad.total_points ?? "—", icon: Trophy },
-              ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-white/10 bg-white/[0.045] p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500">{s.label}</p>
-                    <s.icon className="h-3.5 w-3.5 text-slate-500" />
+        viewMode === "pitch" ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Pitch + stats */}
+            <div className="lg:col-span-2 space-y-4">
+              {/* Quick stats */}
+              <div className="grid grid-cols-5 gap-3">
+                {[
+                  { label: "Giá trị đội", value: formatPrice(squad.team_value), icon: WalletCards },
+                  { label: "Ngân hàng", value: formatPrice(squad.bank), icon: Banknote },
+                  { label: "Free Transfer", value: `${squad.free_transfers}FT`, icon: Plus },
+                  { label: "Hạng tổng", value: squadInfo?.overall_rank ? squadInfo.overall_rank.toLocaleString() : (squad.overall_rank?.toLocaleString() ?? "—"), icon: Trophy },
+                  { label: "Tổng điểm", value: squadInfo?.total_points ?? squad.total_points ?? "—", icon: Star },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-xl border border-white/10 bg-white/[0.045] p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500">{s.label}</p>
+                      <s.icon className="h-3.5 w-3.5 text-slate-500" />
+                    </div>
+                    <p className="text-lg font-black text-white">{s.value}</p>
                   </div>
-                  <p className="text-lg font-black text-white">{s.value}</p>
-                </div>
-              ))}
+                ))}
+              </div>
+
+              {/* Pitch */}
+              <PitchView players={squad.players} />
             </div>
 
-            {/* Pitch */}
-            <PitchView players={squad.players} />
+            {/* Info panel */}
+            <SquadInfoPanel squad={squad} />
           </div>
-
-          {/* Info panel */}
-          <SquadInfoPanel squad={squad} />
-        </div>
+        ) : (
+          <SquadAnalyticsTable players={squad.players} />
+        )
       )}
 
-      {showInfo && <SquadBuilder onClose={() => setShowInfo(false)} />}
+      {showInfo && <SquadBuilder initialSquad={squad} onClose={() => setShowInfo(false)} />}
     </div>
   );
 }

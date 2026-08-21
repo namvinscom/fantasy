@@ -14,6 +14,8 @@ export interface Player {
   name: string;
   web_name: string;
   team_id: number;
+  team_name: string;
+  team_short: string;
   position: "GK" | "DEF" | "MID" | "FWD";
   price: number;
   price_display: string;
@@ -125,6 +127,8 @@ export interface SquadPlayer {
   web_name: string;
   position: string;
   team_id: number;
+  team_name?: string;
+  team_short?: string;
   price: number;
   purchase_price: number | null;
   is_starting: boolean;
@@ -136,6 +140,8 @@ export interface SquadPlayer {
   chance_of_playing: number | null;
   fpl_score: number | null;
   form: number | null;
+  expected_goals?: number | null;
+  expected_assists?: number | null;
 }
 
 export interface Squad {
@@ -177,14 +183,16 @@ export interface CaptainCandidate {
 }
 
 export interface TransferSuggestion {
-  player_out: string;
+  player_out_name: string;
   player_out_id: number;
   player_out_price: number;
   player_out_score: number;
-  player_in: string;
+  horizon_fdr_out: number;
+  player_in_name: string;
   player_in_id: number;
   player_in_price: number;
   player_in_score: number;
+  horizon_fdr_in: number;
   score_gain: number;
   transfer_cost: number;
   net_gain: number;
@@ -251,6 +259,11 @@ export const fplApi = {
   // Gameweeks
   getGameweeks: () => api.get<Gameweek[]>("/gameweeks"),
   getCurrentGW: () => api.get<Gameweek>("/gameweeks/current"),
+  getChipPlannerData: () => api.get<{ 
+    special_gameweeks: { gameweek: number, blanks: string[], doubles: string[] }[],
+    squad_horizon: { gameweek: number, average_fdr: number, has_blank: boolean, has_double: boolean }[],
+    recommendations: string[]
+  }>("/gameweeks/chip-planner/data"),
 
   // Fixtures
   getFixtures: (params?: { gameweek?: number; team_id?: number }) =>
@@ -260,7 +273,8 @@ export const fplApi = {
 
   // Squad
   getSquad: () => api.get<{ message?: string; squad: Squad | null }>("/squad"),
-  saveSquad: (data: unknown) => api.post("/squad", data),
+  getSquadInfo: () => api.get<{ overall_rank: number | null; total_points: number | null; gameweek_points: number | null; gameweek_rank: number | null; fpl_team_id: string | null }>("/squad/info"),
+  saveSquad: (data: any) => api.post("/squad", data),
   importSquad: (team_id: string) => api.post("/squad/import", { team_id }),
   getOptimalXI: () => api.get<XIResult>("/squad/xi"),
   getCaptainPicks: () =>

@@ -21,6 +21,8 @@ class TransferSuggestion:
     player_in_name: str
     player_in_price: int
     player_in_score: float
+    horizon_fdr_out: float
+    horizon_fdr_in: float
     budget_delta: int           # positive = money returned
     score_gain: float
     transfer_cost: int          # 0 or 4
@@ -37,6 +39,25 @@ def get_transfer_suggestions(
     num_suggestions: int = 5,
 ) -> list[TransferSuggestion]:
     """Find best transfer(s) for a squad."""
+    from app.services.scoring_engine import get_scoring_context
+    ctx = get_scoring_context(db)
+    current_gw_id = ctx.current_gw if ctx.current_gw else 1
+    horizon_gws = list(range(current_gw_id, min(current_gw_id + 5, 39)))
+
+    def get_player_fdr(p: Player) -> float:
+        fdr_sum = 0
+        valid = 0
+        for h_gw in horizon_gws:
+            p_fixtures = [f for f in ctx.fixtures_by_team.get(p.team_id, []) if f.gameweek == h_gw]
+            if not p_fixtures:
+                fdr_sum += 5.0
+                valid += 1
+            else:
+                for f in p_fixtures:
+                    fdr_sum += f.team_h_difficulty if f.team_h == p.team_id else f.team_a_difficulty
+                    valid += 1
+        return round(fdr_sum / valid, 2) if valid > 0 else 3.0
+
     squad_player_ids = {sp.player_id for sp in squad.players}
     squad_players_by_id: dict[int, SquadPlayer] = {sp.player_id: sp for sp in squad.players}
     bank = squad.bank or 0
@@ -49,6 +70,7 @@ def get_transfer_suggestions(
             continue
         out_score_bd = compute_player_score(player_out, db)
         out_score = out_score_bd.total
+        out_fdr = get_player_fdr(player_out)
         budget_available = bank + (sp.selling_price or sp.purchase_price or player_out.price or 0)
 
         # Find candidates in same position within budget
@@ -68,6 +90,7 @@ def get_transfer_suggestions(
         for candidate in candidates:
             in_score_bd = compute_player_score(candidate, db)
             in_score = in_score_bd.total
+            in_fdr = get_player_fdr(candidate)
 
             score_gain = in_score - out_score
             if score_gain <= 3:  # Only suggest meaningful upgrades
@@ -99,6 +122,8 @@ def get_transfer_suggestions(
                     player_in_name=candidate.web_name or candidate.name,
                     player_in_price=candidate.price or 0,
                     player_in_score=in_score,
+                    horizon_fdr_out=out_fdr,
+                    horizon_fdr_in=in_fdr,
                     budget_delta=budget_available - (candidate.price or 0),
                     score_gain=round(score_gain, 1),
                     transfer_cost=transfer_cost,
