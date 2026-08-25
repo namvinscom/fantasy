@@ -80,7 +80,7 @@ def get_transfer_suggestions(
                 Player.position == player_out.position,
                 Player.id.notin_(squad_player_ids),
                 Player.price <= budget_available,
-                Player.status.in_(["a", "d"]),
+                Player.status == "a", # Must be 100% available (no injuries/doubts)
             )
             .order_by(Player.total_points.desc())
             .limit(30)
@@ -93,7 +93,7 @@ def get_transfer_suggestions(
             in_fdr = get_player_fdr(candidate)
 
             score_gain = in_score - out_score
-            if score_gain <= 3:  # Only suggest meaningful upgrades
+            if score_gain <= 5:  # Tightened: Only suggest significant upgrades
                 continue
 
             # Determine transfer cost
@@ -102,7 +102,7 @@ def get_transfer_suggestions(
             # Net gain: deduct hit cost as score penalty (4 pts ≈ 8 score points)
             net_gain = score_gain - (transfer_cost * 2)
 
-            if net_gain <= 0:
+            if net_gain <= 2.0: # Tightened: Must have a clear net gain
                 continue
 
             rec = "BUY" if net_gain >= 5 else "HOLD"
