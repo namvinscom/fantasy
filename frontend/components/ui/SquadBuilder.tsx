@@ -163,44 +163,64 @@ const PlayerSlot = memo(function PlayerSlot({
         }}
         onClick={() => (player ? onClear(slot.id) : onFocusPosition(slot.position))}
         className={cn(
-          "relative flex h-[64px] w-[58px] items-center justify-center overflow-hidden rounded-md border transition-all md:h-[72px] md:w-[64px]",
+          "relative flex flex-col items-center justify-end overflow-hidden transition-all h-[68px] w-[58px] md:h-[76px] md:w-[64px]",
           isOver && "ring-2 ring-emerald-400 ring-offset-2 ring-offset-black scale-105 z-10",
           player
-            ? "border-emerald-300/50 bg-slate-950/55 shadow-lg shadow-black/20 hover:border-red-300/80"
-            : "border-dashed border-white/25 bg-white/[0.055] hover:border-cyan-300/70 hover:bg-cyan-400/10"
+            ? "group hover:ring-2 hover:ring-red-400 rounded-t-md"
+            : "border-dashed border-2 border-white/25 bg-white/[0.055] hover:border-cyan-300/70 hover:bg-cyan-400/10 rounded-md"
         )}
         aria-label={player ? `Remove ${player.web_name}` : `Choose ${slot.position}`}
       >
         {player ? (
           <>
-            <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-white/14 to-transparent" />
-            <Shirt className="h-8 w-8 text-white/85" />
-            <div className="absolute inset-x-0 bottom-0 bg-black/70 px-1 py-1 text-center">
-              <span className="block truncate text-[10px] font-black leading-none text-white">{player.web_name}</span>
+            <div className="relative flex h-10 w-10 md:h-12 md:w-12 items-center justify-center mb-0.5 z-10">
+              <Shirt className="h-full w-full text-white/95 drop-shadow-md" style={{ filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))" }} />
             </div>
+            
+            <div className="w-full flex flex-col items-center border-t border-black/40 z-20">
+              <div className={cn(
+                "w-full px-0.5 py-[2px] text-center",
+                player.status !== 'a' ? "bg-red-600" : "bg-[#37003c]"
+              )}>
+                <span className="block truncate text-[9px] md:text-[10px] font-bold leading-none text-pure-white pb-0.5">{player.web_name}</span>
+              </div>
+            </div>
+
             {captainId === player.id && (
-              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-yellow-400 text-[9px] font-black text-black">
+              <span className="absolute -right-1 top-0 flex h-4 w-4 md:h-5 md:w-5 items-center justify-center rounded-full bg-yellow-400 text-[9px] font-black text-black shadow-md border border-black/20 z-30">
                 C
               </span>
             )}
             {viceCaptainId === player.id && captainId !== player.id && (
-              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-black text-black">
+              <span className="absolute -right-1 top-0 flex h-4 w-4 md:h-5 md:w-5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-black text-black shadow-md border border-black/20 z-30">
                 V
               </span>
             )}
-            <span className="absolute inset-0 hidden items-center justify-center bg-red-500/85 text-white group-hover:flex">
-              <Trash2 className="h-5 w-5" />
+            <span className="absolute inset-0 hidden items-center justify-center bg-red-500/85 text-white group-hover:flex z-40">
+              <Trash2 className="h-6 w-6" />
             </span>
           </>
         ) : (
-          <UserPlus className="h-6 w-6 text-white/35" />
+          <div className="flex h-full w-full items-center justify-center">
+            <UserPlus className="h-6 w-6 text-white/35" />
+          </div>
         )}
       </button>
 
-      <div className="min-h-[34px] text-center">
-        <div className="rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-bold text-white">
-          {player ? formatPrice(player.price) : slot.position}
-        </div>
+      <div className="min-h-[34px] text-center w-full">
+        {player ? (
+          <div className="w-full bg-[#f1f5f9] border border-black/40 px-0.5 py-[2px] text-center flex items-center justify-center rounded-b-md shadow-lg">
+            <span className="text-[9px] md:text-[11px] font-black leading-none text-slate-800">
+              {formatPrice(player.price)}
+            </span>
+          </div>
+        ) : (
+          <div className="w-full mt-1 flex justify-center">
+             <div className="rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                {slot.position}
+             </div>
+          </div>
+        )}
         {player && isStarter && (
           <div className="mt-1 flex justify-center gap-1 opacity-100 transition-opacity">
             <button
