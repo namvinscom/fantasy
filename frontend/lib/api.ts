@@ -282,6 +282,12 @@ export const fplApi = {
   getTransferRecommendations: () =>
     api.get<{ free_transfers: number; bank: number; suggestions: TransferSuggestion[] }>("/squad/transfers"),
 
+  // Gameweek Dream Team + Sync
+  getDreamTeam: (gwId: number) =>
+    api.get<{ gameweek: number; team: { player_id: number; name: string; web_name: string; position: string; team_id: number | null; points: number; is_captain: boolean }[] }>(`/gameweeks/${gwId}/dream-team`),
+  syncLiveGW: (gwId: number) =>
+    api.post<{ gameweek: number; records_updated: number }>(`/gameweeks/${gwId}/sync-live`),
+
   // Simulator
   whatIf: (player_out_id: number, player_in_id: number) =>
     api.post("/simulator/what-if", { player_out_id, player_in_id }),
