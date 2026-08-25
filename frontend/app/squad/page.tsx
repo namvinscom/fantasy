@@ -85,44 +85,44 @@ function PitchPlayer({ player }: { player: any }) {
   const isAvail = player.status === "a";
 
   return (
-    <div className="flex min-w-[72px] flex-col items-center gap-1">
-      <div className="relative flex flex-col items-center">
-        <div className={cn(
-          "relative flex h-16 w-14 items-center justify-center overflow-hidden rounded-md border shadow-lg transition-colors",
-          !isAvail
-            ? "border-red-300/70 bg-red-950/60"
-            : "border-white/25 bg-slate-950/55"
-        )}>
-          <div className="absolute inset-x-0 top-0 h-7 bg-gradient-to-b from-white/16 to-transparent" />
-          <Shirt className="h-7 w-7 text-white/85" />
-          <div className="absolute inset-x-0 bottom-0 bg-black/75 px-1 py-1">
-            <span className="block truncate text-center text-[10px] font-black leading-none text-white">
-              {player.web_name}
-            </span>
-          </div>
+    <div className="flex flex-col items-center w-16 md:w-20">
+      <div className="relative flex flex-col items-center mb-0.5">
+        <div className="relative flex h-10 w-10 md:h-12 md:w-12 items-center justify-center">
+          <Shirt className="h-full w-full text-white/95 drop-shadow-md" style={{ filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))" }} />
         </div>
+        
         {player.is_captain && (
-          <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-yellow-400 text-[9px] font-black text-black shadow-sm">
+          <span className="absolute -right-1 top-0 flex h-4 w-4 md:h-5 md:w-5 items-center justify-center rounded-full bg-yellow-400 text-[9px] md:text-[10px] font-black text-black shadow-md border border-black/20">
             C
           </span>
         )}
         {player.is_vice_captain && !player.is_captain && (
-          <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-black text-black shadow-sm">
+          <span className="absolute -right-1 top-0 flex h-4 w-4 md:h-5 md:w-5 items-center justify-center rounded-full bg-slate-200 text-[9px] md:text-[10px] font-black text-black shadow-md border border-black/20">
             V
           </span>
         )}
       </div>
-      <div className="flex items-center gap-1 rounded bg-black/55 px-1.5 py-0.5">
-        <PositionBadge position={player.position} />
-        <span className={cn(
-          "text-[10px] font-black tabular-nums",
-          score == null ? "text-slate-500"
-          : score >= 72 ? "text-emerald-300"
-          : score >= 55 ? "text-cyan-300"
-          : "text-yellow-300"
+
+      <div className="w-full flex flex-col items-center rounded overflow-hidden shadow-lg border border-black/40">
+        <div className={cn(
+          "w-full px-0.5 py-[2px] text-center",
+          !isAvail ? "bg-red-600" : "bg-[#37003c]"
         )}>
-          {score != null ? score.toFixed(0) : "—"}
-        </span>
+          <span className="block truncate text-[9px] md:text-[11px] font-bold leading-none text-pure-white pb-0.5">
+            {player.web_name}
+          </span>
+        </div>
+        <div className="w-full bg-[#f1f5f9] px-0.5 py-[2px] text-center flex items-center justify-center">
+          <span className={cn(
+            "text-[9px] md:text-[11px] font-black leading-none",
+            score == null ? "text-slate-500"
+            : score >= 72 ? "text-emerald-700"
+            : score >= 55 ? "text-blue-700"
+            : "text-slate-800"
+          )}>
+            {score != null ? score.toFixed(0) : "—"}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -187,6 +187,11 @@ function SquadInfoPanel({ squad }: { squad: any }) {
   const { data: captainData } = useQuery({
     queryKey: ["captain"],
     queryFn: () => fplApi.getCaptainPicks().then((r) => r.data),
+    retry: false,
+  });
+  const { data: transferData } = useQuery({
+    queryKey: ["transfers"],
+    queryFn: () => fplApi.getTransferRecommendations().then((r) => r.data),
     retry: false,
   });
 
@@ -257,6 +262,39 @@ function SquadInfoPanel({ squad }: { squad: any }) {
           {captainData.recommended_vc && (
             <p className="text-[11px] text-slate-600 mt-1">Phó: {captainData.recommended_vc}</p>
           )}
+        </div>
+      )}
+
+      {/* Transfer Suggestions */}
+      {transferData?.suggestions && transferData.suggestions.length > 0 && (
+        <div className="glass-card p-4 border border-emerald-400/20 bg-emerald-950/20">
+          <p className="section-title mb-3 text-emerald-300">Tư vấn chuyển nhượng</p>
+          <div className="space-y-3">
+            {transferData.suggestions.slice(0, 2).map((s: any, idx: number) => (
+              <div key={idx} className="flex flex-col gap-1.5 p-2 bg-black/40 rounded border border-white/10">
+                <div className="flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-red-400 uppercase font-bold tracking-wider">OUT</span>
+                    <span className="text-xs text-slate-300 line-through">{s.player_out_name}</span>
+                  </div>
+                  <RefreshCw className="w-4 h-4 text-slate-600" />
+                  <div className="flex flex-col items-end">
+                    <span className="text-[9px] text-emerald-400 uppercase font-bold tracking-wider">IN</span>
+                    <span className="text-xs text-white font-bold">{s.player_in_name}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <span className="text-[10px] text-slate-500">{s.reason}</span>
+                  <span className={cn(
+                    "text-[10px] font-black px-1.5 py-0.5 rounded",
+                    s.net_gain > 5 ? "bg-emerald-500/20 text-emerald-400" : "bg-cyan-500/20 text-cyan-400"
+                  )}>
+                    +{s.net_gain.toFixed(1)} pts
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
