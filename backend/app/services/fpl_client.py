@@ -97,6 +97,10 @@ class FPLClient:
         """Semi-public squad picks for a given team/GW (finished GWs)."""
         return self._get(f"entry/{team_id}/event/{gameweek}/picks/", f"picks_{team_id}_{gameweek}")
 
+    def get_dream_team(self, gameweek: int) -> dict | None:
+        """Dream team (best 11 players) for a finished GW."""
+        return self._get(f"dream-team/{gameweek}/", f"dream_team_{gameweek}")
+
     def get_entry_info(self, team_id: str) -> dict | None:
         """Basic info about an FPL entry."""
         return self._get(f"entry/{team_id}/", f"entry_{team_id}")
